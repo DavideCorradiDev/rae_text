@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  formatting:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: stable
+        components: rustfmt
+    - name: Check Formatting
+      run: cargo +stable fmt --all -- --check
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - {os: ubuntu-latest, run_tests: false, gen_doc: true}
+          - {os: windows-latest, run_tests: false, gen_doc: false}
+          - {os: macos-latest, run_tests: false, gen_doc: false}
+
+    env:
+      RUST_BACKTRACE: 1
+      OPTIONS: ${{ matrix.platform.options }}
+      TEST_OPTIONS: ${{ matrix.platform.test_options }}
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+    - uses: actions/checkout@v2
+    - uses: seanmiddleditch/gha-setup-ninja@master
+    - name: Build
+      shell: bash
+      run: cargo build --verbose $OPTIONS
+    - name: Build tests
+      shell: bash
+      run: cargo test --no-run --verbose $OPTIONS -- --nocapture
+    - name: Build examples
+      shell: bash
+      run: cargo build --examples --verbose $OPTIONS
+    - name: Run tests
+      shell: bash
+      if: matrix.platform.run_tests
+      run: cargo test --verbose $OPTIONS -- --nocapture $TEST_OPTIONS
+    - name: Generate doc
+      shell: bash
+      if: matrix.platform.gen_doc
+      run: cargo doc --no-deps $OPTIONS
