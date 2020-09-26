@@ -1,0 +1,4 @@
+merge_imports = true
+wrap_comments = true
+format_strings = true
+newline_style = "Unix"
