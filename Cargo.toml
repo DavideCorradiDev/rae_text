@@ -6,4 +6,4 @@ edition = "2018"
 
 [dependencies]
 freetype-rs = { version = "0.26" }
-harfbuzz-sys = { version = "0.5" }
+harfbuzz_rs = { version = "1.2" }
