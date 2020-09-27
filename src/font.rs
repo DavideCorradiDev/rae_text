@@ -1,16 +1,19 @@
+extern crate freetype as ft;
+extern crate harfbuzz_rs as hb;
+
 pub use std::fmt::Debug;
 
-pub use freetype::{Error as FontError, FtResult as FontResult};
+pub use ft::{Error as FontError, FtResult as FontResult};
 
-pub type FaceIndex = isize;
+pub type FaceIndex = u32;
 
 pub struct FontLibrary {
-    ft_lib: freetype::Library,
+    ft_lib: ft::Library,
 }
 
 impl FontLibrary {
     pub fn new() -> FontResult<Self> {
-        let ft_lib = freetype::Library::init()?;
+        let ft_lib = ft::Library::init()?;
         Ok(Self { ft_lib })
     }
 }
@@ -23,17 +26,21 @@ impl Debug for FontLibrary {
 
 #[derive(Debug)]
 pub struct FontFace {
-    ft_face: freetype::Face,
+    ft_face: ft::Face,
+    hb_face: hb::Owned<hb::Face<'static>>,
 }
 
 impl FontFace {
-    pub fn from_file<P: AsRef<std::ffi::OsStr>>(
+    pub fn from_file<P: AsRef<std::path::Path>>(
         lib: &FontLibrary,
         path: P,
         face_index: FaceIndex,
     ) -> FontResult<Self> {
-        let ft_face = lib.ft_lib.new_face(path, face_index)?;
-        Ok(Self { ft_face })
+        let ft_face = lib
+            .ft_lib
+            .new_face(path.as_ref().as_os_str(), face_index as isize)?;
+        let hb_face = hb::Face::from_file(path, face_index).unwrap();
+        Ok(Self { ft_face, hb_face })
     }
 }
 
