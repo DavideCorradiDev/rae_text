@@ -25,12 +25,12 @@ impl Debug for FontLibrary {
 }
 
 #[derive(Debug)]
-pub struct FontFace {
+pub struct Face {
     ft_face: ft::Face,
-    hb_face: hb::Owned<hb::Face<'static>>,
+    hb_face: hb::Shared<hb::Face<'static>>,
 }
 
-impl FontFace {
+impl Face {
     pub fn from_file<P: AsRef<std::path::Path>>(
         lib: &FontLibrary,
         path: P,
@@ -39,8 +39,20 @@ impl FontFace {
         let ft_face = lib
             .ft_lib
             .new_face(path.as_ref().as_os_str(), face_index as isize)?;
-        let hb_face = hb::Face::from_file(path, face_index).unwrap();
+        let hb_face = hb::Face::from_file(path, face_index).unwrap().to_shared();
         Ok(Self { ft_face, hb_face })
+    }
+}
+
+#[derive(Debug)]
+pub struct Font {
+    hb_font: hb::Owned<hb::Font<'static>>,
+}
+
+impl Font {
+    pub fn new(face: &Face) -> Self {
+        let hb_font = hb::Font::new(face.hb_face.clone());
+        Self { hb_font }
     }
 }
 
@@ -54,8 +66,15 @@ mod tests {
     }
 
     #[test]
-    fn create_font_face() {
+    fn create_face() {
         let lib = FontLibrary::new().unwrap();
-        let _font_face = FontFace::from_file(&lib, "src/data/Roboto-Regular.ttf", 0).unwrap();
+        let _face = Face::from_file(&lib, "src/data/Roboto-Regular.ttf", 0).unwrap();
+    }
+
+    #[test]
+    fn create_font() {
+        let lib = FontLibrary::new().unwrap();
+        let face = Face::from_file(&lib, "src/data/Roboto-Regular.ttf", 0).unwrap();
+        let _font = Font::new(&face);
     }
 }
