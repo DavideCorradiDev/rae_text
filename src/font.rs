@@ -126,7 +126,7 @@ impl Font {
         let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
         let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
         let mut glyph_map = HashMap::new();
-        for (i, g) in glyphs.iter().enumerate() {
+        for (i, g) in glyphs.into_iter().enumerate() {
             let range_begin = i * glyph_atlas_slice_byte_count;
             let range_end = range_begin + (g.width() * g.rows()) as usize;
             glyph_atlas_buffer[range_begin..range_end].copy_from_slice(g.buffer());
@@ -157,6 +157,10 @@ impl Font {
             let indices_end = indices_begin + 6;
             glyph_map.insert(characters[i], indices_begin..indices_end);
         }
+
+        println!("Vertices {:?}", glyph_atlas_vertices);
+        println!("Indices {:?}", glyph_atlas_indices);
+        println!("GlyphMap: {:?}", glyph_map);
 
         let glyph_atlas = gfx::Texture::new(
             instance,
@@ -228,6 +232,14 @@ mod tests {
 
     #[test]
     fn create_font() {
+        let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
+        let lib = FontLibrary::new().unwrap();
+        let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
+        let _font = Font::new(&instance, &face, 12, &['a', 'Z', '2', '#']);
+    }
+
+    #[test]
+    fn create_english_font() {
         let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
         let lib = FontLibrary::new().unwrap();
         let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
