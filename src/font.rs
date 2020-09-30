@@ -1,7 +1,7 @@
 extern crate freetype as ft;
 extern crate harfbuzz_rs as hb;
 
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use rae_gfx::core as gfx;
 
@@ -72,11 +72,17 @@ unsafe impl bytemuck::Zeroable for FontVertex {
 
 unsafe impl bytemuck::Pod for FontVertex {}
 
+type FontMeshIndex = gfx::MeshIndex;
+type FontMeshIndexRange = gfx::MeshIndexRange;
+type FontMesh = gfx::IndexedMesh<FontVertex>;
+
 #[derive(Debug)]
 pub struct Font {
     size: FontSize,
     hb_font: hb::Owned<hb::Font<'static>>,
     glyph_atlas: gfx::Texture,
+    glyph_atlas_mesh: FontMesh,
+    glyph_map: HashMap<char, FontMeshIndexRange>,
 }
 
 impl Font {
@@ -105,22 +111,51 @@ impl Font {
         }
 
         // Create the glyph atlas.
-        let max_glyph_width = glyphs.iter().map(|x| x.width()).max().unwrap() as u32;
-        let max_glyph_height = glyphs.iter().map(|x| x.rows()).max().unwrap() as u32;
-        let glyph_count = characters.len() as u32;
+        let glyph_atlas_width = glyphs.iter().map(|x| x.width()).max().unwrap() as u32;
+        let glyph_atlas_height = glyphs.iter().map(|x| x.rows()).max().unwrap() as u32;
+        let glyph_atlas_depth = characters.len() as u32;
         let glyph_atlas_extent = gfx::Extent3d {
-            width: max_glyph_width,
-            height: max_glyph_height,
-            depth: glyph_count,
+            width: glyph_atlas_width,
+            height: glyph_atlas_height,
+            depth: glyph_atlas_depth,
         };
+        let glyph_atlas_slice_byte_count = (glyph_atlas_width * glyph_atlas_height) as usize;
+        let glyph_atlas_byte_count = glyph_atlas_slice_byte_count * glyph_atlas_depth as usize;
 
-        let max_glyph_byte_count = (max_glyph_width * max_glyph_height) as usize;
-        let byte_count = max_glyph_byte_count * glyph_count as usize;
-        let mut glyph_atlas_buffer = vec![0; byte_count as usize];
+        let mut glyph_atlas_buffer = vec![0; glyph_atlas_byte_count];
+        let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
+        let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
+        let mut glyph_map = HashMap::new();
         for (i, g) in glyphs.iter().enumerate() {
-            let range_begin = i * max_glyph_byte_count;
+            let range_begin = i * glyph_atlas_slice_byte_count;
             let range_end = range_begin + (g.width() * g.rows()) as usize;
             glyph_atlas_buffer[range_begin..range_end].copy_from_slice(g.buffer());
+
+            let gw = g.width() as f32;
+            let gh = g.rows() as f32;
+            let tw = gw / glyph_atlas_width as f32;
+            let th = gh / glyph_atlas_height as f32;
+            let idx = i as u32;
+            glyph_atlas_vertices.extend_from_slice(&[
+                FontVertex::new([0., 0.], [0., 0.], idx),
+                FontVertex::new([0., gh], [0., th], idx),
+                FontVertex::new([gw, gh], [tw, th], idx),
+                FontVertex::new([gw, 0.], [tw, 0.], idx),
+            ]);
+
+            let vertices_begin = (i * 4) as FontMeshIndex;
+            glyph_atlas_indices.extend_from_slice(&[
+                vertices_begin,
+                vertices_begin + 1,
+                vertices_begin + 3,
+                vertices_begin + 3,
+                vertices_begin + 1,
+                vertices_begin + 2,
+            ]);
+
+            let indices_begin = (i * 6) as u32;
+            let indices_end = indices_begin + 6;
+            glyph_map.insert(characters[i], indices_begin..indices_end);
         }
 
         let glyph_atlas = gfx::Texture::new(
@@ -142,21 +177,35 @@ impl Font {
             glyph_atlas_buffer.as_slice(),
             gfx::TextureDataLayout {
                 offset: 0,
-                bytes_per_row: max_glyph_width,
-                rows_per_image: max_glyph_height,
+                bytes_per_row: glyph_atlas_width,
+                rows_per_image: glyph_atlas_height,
             },
             glyph_atlas_extent,
         );
+
+        let glyph_atlas_mesh = FontMesh::new(instance, &glyph_atlas_vertices, &glyph_atlas_indices);
 
         Self {
             size,
             hb_font,
             glyph_atlas,
+            glyph_atlas_mesh,
+            glyph_map,
         }
     }
 
     pub fn size(&self) -> FontSize {
         self.size
+    }
+}
+
+pub struct CharacterSet {}
+
+impl CharacterSet {
+    pub fn english() -> Vec<char> {
+        (0x0000u32..0x007fu32)
+            .map(|x| std::char::from_u32(x).expect("Invalid Unicode codepoint"))
+            .collect()
     }
 }
 
@@ -182,6 +231,6 @@ mod tests {
         let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
         let lib = FontLibrary::new().unwrap();
         let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
-        let _font = Font::new(&instance, &face, 12, &['a', 'B', '1', '#']);
+        let _font = Font::new(&instance, &face, 12, CharacterSet::english().as_slice());
     }
 }
