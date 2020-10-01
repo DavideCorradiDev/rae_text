@@ -3,7 +3,10 @@ extern crate harfbuzz_rs as hb;
 
 use std::{collections::HashMap, fmt::Debug};
 
+use num_traits::Zero;
+
 use rae_gfx::core as gfx;
+use rae_math::{conversion::ToHomogeneous3, geometry2, geometry3};
 
 pub use ft::{Error as FontError, FtResult as FontResult};
 
@@ -72,9 +75,69 @@ unsafe impl bytemuck::Zeroable for FontVertex {
 
 unsafe impl bytemuck::Pod for FontVertex {}
 
-type FontMeshIndex = gfx::MeshIndex;
 type FontMeshIndexRange = gfx::MeshIndexRange;
+type FontMeshIndex = gfx::MeshIndex;
 type FontMesh = gfx::IndexedMesh<FontVertex>;
+
+#[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct PushConstants {
+    transform: geometry3::HomogeneousMatrix<f32>,
+    color: gfx::ColorF32,
+}
+
+impl PushConstants {
+    pub fn new(transform: &geometry2::Transform<f32>, color: gfx::ColorF32) -> Self {
+        Self {
+            transform: transform.to_homogeneous3(),
+            color,
+        }
+    }
+
+    fn as_slice(&self) -> &[u32] {
+        let pc: *const PushConstants = self;
+        let pc: *const u8 = pc as *const u8;
+        let data = unsafe { std::slice::from_raw_parts(pc, std::mem::size_of::<PushConstants>()) };
+        bytemuck::cast_slice(&data)
+    }
+}
+
+unsafe impl bytemuck::Zeroable for PushConstants {
+    fn zeroed() -> Self {
+        Self {
+            transform: geometry3::HomogeneousMatrix::zero(),
+            color: gfx::ColorF32::default(),
+        }
+    }
+}
+
+unsafe impl bytemuck::Pod for PushConstants {}
+
+fn bind_group_layout(instance: &gfx::Instance) -> gfx::BindGroupLayout {
+    gfx::BindGroupLayout::new(
+        instance,
+        &gfx::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                gfx::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: gfx::ShaderStage::FRAGMENT,
+                    ty: gfx::BindingType::SampledTexture {
+                        multisampled: false,
+                        component_type: gfx::TextureComponentType::Float,
+                        dimension: gfx::TextureViewDimension::D2Array,
+                    },
+                    count: None,
+                },
+                gfx::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: gfx::ShaderStage::FRAGMENT,
+                    ty: gfx::BindingType::Sampler { comparison: false },
+                    count: None,
+                },
+            ],
+        },
+    )
+}
 
 #[derive(Debug)]
 pub struct Font {

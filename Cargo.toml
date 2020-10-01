@@ -5,8 +5,12 @@ authors = ["Davide Corradi <davide.corradi.dev@gmail.com>"]
 edition = "2018"
 
 [dependencies]
+rae_math = { git = "https://github.com/DavideCorradiDev/rae_math.git", tag = "v0.1.1", features = [
+    "serde-serialize"
+] }
+rae_gfx = { git = "https://github.com/DavideCorradiDev/rae_gfx.git", tag = "v0.1.1" }
 freetype-rs = { version = "0.26" }
 harfbuzz_rs = { version = "1.2" }
-rae_gfx = { git = "https://github.com/DavideCorradiDev/rae_gfx.git", tag = "v0.1.1" }
 serde = { version = "1.0", features = ["derive"] }
+num-traits = { version = "0.2" }
 bytemuck = { version = "1.4" }
