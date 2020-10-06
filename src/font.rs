@@ -312,8 +312,6 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
         self.set_pipeline(&pipeline.pipeline);
         self.set_bind_group(0, &font.uniform_constants().bind_group, &[]);
-        // TOOD: must store bind grou within the Font.
-        //self.set_bind_group(0, &font.glyph_atlas_bind_group, &[]);
         self.set_index_buffer(font.glyph_atlas_mesh.index_buffer().slice(..));
         self.set_vertex_buffer(0, font.glyph_atlas_mesh.vertex_buffer().slice(..));
 
@@ -327,9 +325,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
                     ),
             );
             let pc = PushConstants::new(&convert(transform), gfx::ColorF32::WHITE);
-            // TODO: Must change this to contain a u32.
-            // let glyph_range = font.glyph_map[info.codepoint];
-            let range = font.glyph_map[&'a'].clone();
+            let range = font.glyph_map[&info.codepoint].clone();
 
             self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
             self.draw_indexed(range, 0, 0..1);
@@ -351,7 +347,7 @@ pub struct Font {
     glyph_atlas_sampler: gfx::Sampler,
     glyph_atlas_uniform: UniformConstants,
     glyph_atlas_mesh: Mesh,
-    glyph_map: HashMap<char, MeshIndexRange>,
+    glyph_map: HashMap<u32, MeshIndexRange>,
 }
 
 impl Font {
@@ -376,12 +372,12 @@ impl Font {
             face.ft_face
                 .load_char(*c as usize, ft::face::LoadFlag::RENDER)
                 .unwrap();
-            glyphs.push(face.ft_face.glyph().bitmap());
+            glyphs.push((*c as u32, face.ft_face.glyph().bitmap()));
         }
 
         // Create the glyph atlas.
-        let glyph_atlas_width = glyphs.iter().map(|x| x.width()).max().unwrap() as u32;
-        let glyph_atlas_height = glyphs.iter().map(|x| x.rows()).max().unwrap() as u32;
+        let glyph_atlas_width = glyphs.iter().map(|x| x.1.width()).max().unwrap() as u32;
+        let glyph_atlas_height = glyphs.iter().map(|x| x.1.rows()).max().unwrap() as u32;
         let glyph_atlas_depth = characters.len() as u32;
         let glyph_atlas_extent = gfx::Extent3d {
             width: glyph_atlas_width,
@@ -395,7 +391,7 @@ impl Font {
         let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
         let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
         let mut glyph_map = HashMap::new();
-        for (i, g) in glyphs.into_iter().enumerate() {
+        for (i, (c, g)) in glyphs.into_iter().enumerate() {
             let range_begin = i * glyph_atlas_slice_byte_count;
             let range_end = range_begin + (g.width() * g.rows()) as usize;
             glyph_atlas_buffer[range_begin..range_end].copy_from_slice(g.buffer());
@@ -424,7 +420,7 @@ impl Font {
 
             let indices_begin = (i * 6) as u32;
             let indices_end = indices_begin + 6;
-            glyph_map.insert(characters[i], indices_begin..indices_end);
+            glyph_map.insert(c, indices_begin..indices_end);
         }
 
         println!("Vertices {:?}", glyph_atlas_vertices);
