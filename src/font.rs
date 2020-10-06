@@ -6,10 +6,7 @@ use std::{collections::HashMap, fmt::Debug};
 use num_traits::Zero;
 
 use rae_gfx::core as gfx;
-use rae_math::{
-    conversion::{convert, ToHomogeneous3},
-    geometry2, geometry3,
-};
+use rae_math::{conversion::ToHomogeneous3, geometry2, geometry3};
 
 pub use ft::{Error as FontError, FtResult as FontResult};
 
@@ -300,11 +297,23 @@ impl RenderPipeline {
 }
 
 pub trait Renderer<'a> {
-    fn draw_text(&mut self, pipeline: &'a RenderPipeline, font: &'a Font, text: &str);
+    fn draw_text(
+        &mut self,
+        pipeline: &'a RenderPipeline,
+        font: &'a Font,
+        text: &str,
+        transform: geometry2::Transform<f32>,
+    );
 }
 
 impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
-    fn draw_text(&mut self, pipeline: &'a RenderPipeline, font: &'a Font, text: &str) {
+    fn draw_text(
+        &mut self,
+        pipeline: &'a RenderPipeline,
+        font: &'a Font,
+        text: &str,
+        transform: geometry2::Transform<f32>,
+    ) {
         let buffer = hb::UnicodeBuffer::new().add_str(text);
         let output = hb::shape(&font.hb_font, buffer, &[]);
         let positions = output.get_glyph_positions();
@@ -317,14 +326,15 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
         let mut cursor_pos = geometry2::Vector::new(0., 0.);
         for (position, info) in positions.iter().zip(infos) {
-            let transform = geometry2::Translation::from(
-                cursor_pos
-                    + geometry2::Vector::new(
-                        position.x_offset as f32 / 64.,
-                        position.y_offset as f32 / 64.,
-                    ),
-            );
-            let pc = PushConstants::new(&convert(transform), gfx::ColorF32::WHITE);
+            let transform = transform
+                * geometry2::Translation::from(
+                    cursor_pos
+                        + geometry2::Vector::new(
+                            position.x_offset as f32 / 64.,
+                            position.y_offset as f32 / 64.,
+                        ),
+                );
+            let pc = PushConstants::new(&transform, gfx::ColorF32::WHITE);
             let range = font.glyph_map[&info.codepoint].clone();
 
             self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
@@ -422,10 +432,6 @@ impl Font {
             let indices_end = indices_begin + 6;
             glyph_map.insert(c, indices_begin..indices_end);
         }
-
-        println!("Vertices {:?}", glyph_atlas_vertices);
-        println!("Indices {:?}", glyph_atlas_indices);
-        println!("GlyphMap: {:?}", glyph_map);
 
         let glyph_atlas = gfx::Texture::new(
             instance,

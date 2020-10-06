@@ -185,7 +185,12 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
                 &self.pipeline.render_pass_requirements(),
                 &RenderPassOperations::default(),
             );
-            rpass.draw_text(&self.pipeline, &self.font, "Hello world!");
+            rpass.draw_text(
+                &self.pipeline,
+                &self.font,
+                "Hello world!",
+                convert(self.projection_transform),
+            );
         }
 
         cmd_sequence.submit(&self.instance);
