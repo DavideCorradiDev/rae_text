@@ -15,5 +15,12 @@ serde = { version = "1.0", features = ["derive"] }
 num-traits = { version = "0.2" }
 bytemuck = { version = "1.4" }
 
+[dev-dependencies]
+rae_app = { git = "https://github.com/DavideCorradiDev/rae_app.git", tag = "v0.1.0" }
+
 [build-dependencies]
 rae_shader = { git = "https://github.com/DavideCorradiDev/rae_shader.git", tag = "v0.1.2" }
+
+[[example]]
+name = "text"
+path = "examples/text.rs"
