@@ -377,8 +377,10 @@ impl Font {
 
         // Setup harfbuzz font for future shaping.
         let mut hb_font = hb::Font::new(face.hb_face.clone());
-        let ppem = size * Self::RESOLUTION / 72;
+        let ppem = ((64 * size * Self::RESOLUTION) as f32 / 72.) as u32;
         hb_font.set_ppem(ppem, ppem);
+
+        println!("Size: {}, ppem: {}", size, ppem);
 
         // Load glyphs.
         face.ft_face
