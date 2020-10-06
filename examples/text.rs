@@ -188,8 +188,8 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
             rpass.draw_text(
                 &self.pipeline,
                 &self.font,
-                "Hello world!",
-                convert(self.projection_transform),
+                "AAA aaa BBB bbb",
+                convert(self.projection_transform * Translation::new(100., 100.)),
             );
         }
 
