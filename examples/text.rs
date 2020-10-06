@@ -17,8 +17,10 @@ use rae_math::{
 
 use rae_gfx::core::{
     Canvas, CanvasWindow, CanvasWindowDescriptor, CommandSequence, Instance, InstanceCreationError,
-    InstanceDescriptor, SampleCount, SwapChainError,
+    InstanceDescriptor, RenderPassOperations, SampleCount, SwapChainError,
 };
+
+use text::Renderer as TextRenderer;
 
 pub type ApplicationEvent = ();
 
@@ -176,6 +178,16 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
     fn on_variable_update(&mut self, dt: std::time::Duration) -> Result<ControlFlow, Self::Error> {
         let frame = self.window.current_frame()?;
         let mut cmd_sequence = CommandSequence::new(&self.instance);
+
+        {
+            let mut rpass = cmd_sequence.begin_render_pass(
+                &frame,
+                &self.pipeline.render_pass_requirements(),
+                &RenderPassOperations::default(),
+            );
+            rpass.draw_text(&self.pipeline, &self.font, "Hello world!");
+        }
+
         cmd_sequence.submit(&self.instance);
         Ok(ControlFlow::Continue)
     }
