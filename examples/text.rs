@@ -143,7 +143,7 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
             &instance,
             &face,
             12,
-            text::CharacterSet::english().as_slice(),
+            &['I', 'A', 'E'], // text::CharacterSet::english().as_slice(),
         );
 
         Ok(Self {
@@ -188,7 +188,7 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
             rpass.draw_text(
                 &self.pipeline,
                 &self.font,
-                "AAA aaa BBB bbb",
+                "IIIIAAAAAEEEEEE",
                 convert(self.projection_transform * Translation::new(100., 100.)),
             );
         }

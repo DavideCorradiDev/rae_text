@@ -342,7 +342,6 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
             // TODO: we must check how to convert from the harfbuzz to the glsl scalar
             // values.
-            // TODO: what should we use info.cluster for?
             cursor_pos.x = cursor_pos.x + position.x_advance as f32 / 64.;
             cursor_pos.y = cursor_pos.y + position.y_advance as f32 / 64.;
         }
@@ -360,6 +359,12 @@ pub struct Font {
     glyph_map: HashMap<u32, MeshIndexRange>,
 }
 
+struct BitmapData {
+    pixels: Vec<u8>,
+    width: i32,
+    rows: i32,
+}
+
 impl Font {
     const RESOLUTION: u32 = 300;
 
@@ -368,6 +373,8 @@ impl Font {
     // TODO: replace unwrap calls.
     // TODO: why is bytes per row proportional to the height rather than the width?
     pub fn new(instance: &gfx::Instance, face: &Face, size: FontSize, characters: &[char]) -> Self {
+        assert!(!characters.is_empty());
+
         // Setup harfbuzz font for future shaping.
         let mut hb_font = hb::Font::new(face.hb_face.clone());
         let ppem = size * Self::RESOLUTION / 72;
@@ -375,42 +382,74 @@ impl Font {
 
         // Load glyphs.
         face.ft_face
-            .set_char_size(0, size as isize, 0, Self::RESOLUTION)
+            .set_char_size(0, (64 * size) as isize, 0, Self::RESOLUTION)
             .unwrap();
         let mut glyphs = Vec::with_capacity(characters.len());
         for c in characters {
             face.ft_face
                 .load_char(*c as usize, ft::face::LoadFlag::RENDER)
                 .unwrap();
-            glyphs.push((*c as u32, face.ft_face.glyph().bitmap()));
+            let bitmap = face.ft_face.glyph().bitmap();
+            glyphs.push((
+                face.ft_face.get_char_index(*c as usize),
+                BitmapData {
+                    pixels: Vec::from(bitmap.buffer()),
+                    width: bitmap.width(),
+                    rows: bitmap.rows(),
+                },
+            ));
+            // TODO: must make a deep copy of the buffer data before loading the next char.
+            // Best thing to do is not render here, just make a loop to find max size.
+            // Reload the chars afterwards with bitmap rendereing.
+            println!(
+                "New glyph: {}, {}, width: {}, rows: {}",
+                *c,
+                face.ft_face.get_char_index(*c as usize),
+                bitmap.width(),
+                bitmap.rows()
+            );
         }
 
         // Create the glyph atlas.
-        let glyph_atlas_width = glyphs.iter().map(|x| x.1.width()).max().unwrap() as u32;
-        let glyph_atlas_height = glyphs.iter().map(|x| x.1.rows()).max().unwrap() as u32;
+        let glyph_atlas_width = glyphs.iter().map(|x| x.1.width).max().unwrap() as u32;
+        let glyph_atlas_height = glyphs.iter().map(|x| x.1.rows).max().unwrap() as u32;
         let glyph_atlas_depth = characters.len() as u32;
         let glyph_atlas_extent = gfx::Extent3d {
             width: glyph_atlas_width,
             height: glyph_atlas_height,
             depth: glyph_atlas_depth,
         };
+
+        let glyph_atlas_row_byte_count = glyph_atlas_width as usize;
         let glyph_atlas_slice_byte_count = (glyph_atlas_width * glyph_atlas_height) as usize;
         let glyph_atlas_byte_count = glyph_atlas_slice_byte_count * glyph_atlas_depth as usize;
+
+        println!(
+            "glyph atlas extent: {:?}, slice size {}, full size {}",
+            glyph_atlas_extent, glyph_atlas_slice_byte_count, glyph_atlas_byte_count
+        );
 
         let mut glyph_atlas_buffer = vec![0; glyph_atlas_byte_count];
         let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
         let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
         let mut glyph_map = HashMap::new();
         for (i, (c, g)) in glyphs.into_iter().enumerate() {
-            let range_begin = i * glyph_atlas_slice_byte_count;
-            let range_end = range_begin + (g.width() * g.rows()) as usize;
-            glyph_atlas_buffer[range_begin..range_end].copy_from_slice(g.buffer());
+            let slice_begin = i * glyph_atlas_slice_byte_count;
+            for row in 0..g.rows {
+                let image_begin = slice_begin + row as usize * glyph_atlas_row_byte_count;
+                let image_end = image_begin + g.width as usize;
+                let pixels_begin = (row * g.width) as usize;
+                let pixels_end = pixels_begin + g.width as usize;
+                glyph_atlas_buffer[image_begin..image_end]
+                    .copy_from_slice(&g.pixels[pixels_begin..pixels_end]);
+            }
 
-            let gw = g.width() as f32;
-            let gh = g.rows() as f32;
+            let gw = g.width as f32;
+            let gh = g.rows as f32;
             let tw = gw / glyph_atlas_width as f32;
             let th = gh / glyph_atlas_height as f32;
             let idx = i as f32;
+            println!("Vertex info: ({}, {}), ({}, {}, {})", gw, gh, tw, th, idx);
             glyph_atlas_vertices.extend_from_slice(&[
                 Vertex::new([0., 0.], [0., 0., idx]),
                 Vertex::new([0., gh], [0., th, idx]),
