@@ -1,3 +1,5 @@
+extern crate rae_text as text;
+
 use std::iter::once;
 
 use rae_app::{
@@ -13,14 +15,9 @@ use rae_math::{
     geometry3,
 };
 
-use rae_gfx::{
-    core::{
-        Canvas, CanvasWindow, CanvasWindowDescriptor, ColorF32, CommandSequence, Instance,
-        InstanceCreationError, InstanceDescriptor, RenderPassOperations, SampleCount,
-        SwapChainError,
-    },
-    shape2,
-    shape2::Renderer as Shape2Renderer,
+use rae_gfx::core::{
+    Canvas, CanvasWindow, CanvasWindowDescriptor, CommandSequence, Instance, InstanceCreationError,
+    InstanceDescriptor, SampleCount, SwapChainError,
 };
 
 pub type ApplicationEvent = ();
@@ -81,10 +78,15 @@ struct ApplicationImpl {
     window: CanvasWindow,
     instance: Instance,
     projection_transform: Projective<f32>,
+    pipeline: text::RenderPipeline,
+    font_lib: text::FontLibrary,
+    face: text::Face,
+    font: text::Font,
 }
 
 impl ApplicationImpl {
     const SAMPLE_COUNT: SampleCount = 8;
+    const FONT_PATH: &'static str = "src/data/Roboto-Regular.ttf";
 }
 
 impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
@@ -125,10 +127,31 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
         )
         .to_projective();
 
+        let pipeline = text::RenderPipeline::new(
+            &instance,
+            &text::RenderPipelineDescriptor {
+                sample_count: Self::SAMPLE_COUNT,
+                ..text::RenderPipelineDescriptor::default()
+            },
+        );
+
+        let font_lib = text::FontLibrary::new().unwrap();
+        let face = text::Face::from_file(&font_lib, Self::FONT_PATH, 0).unwrap();
+        let font = text::Font::new(
+            &instance,
+            &face,
+            12,
+            text::CharacterSet::english().as_slice(),
+        );
+
         Ok(Self {
             window,
             instance,
             projection_transform,
+            pipeline,
+            font_lib,
+            face,
+            font,
         })
     }
 
