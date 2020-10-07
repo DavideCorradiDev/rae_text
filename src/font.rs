@@ -326,16 +326,19 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
         let mut cursor_pos = geometry2::Vector::new(0., 0.);
         for (position, info) in positions.iter().zip(infos) {
+            let (range, bearing) = font.glyph_map[&info.codepoint].clone();
+
             let transform = transform
                 * geometry2::Translation::from(
                     cursor_pos
                         + geometry2::Vector::new(
                             position.x_offset as f32 / 64.,
                             position.y_offset as f32 / 64.,
-                        ),
+                        )
+                        + bearing,
                 );
+
             let pc = PushConstants::new(&transform, gfx::ColorF32::WHITE);
-            let range = font.glyph_map[&info.codepoint].clone();
 
             self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
             self.draw_indexed(range, 0, 0..1);
@@ -349,6 +352,15 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 }
 
 #[derive(Debug)]
+struct BitmapData {
+    pixels: Vec<u8>,
+    left: i32,
+    top: i32,
+    width: i32,
+    rows: i32,
+}
+
+#[derive(Debug)]
 pub struct Font {
     size: FontSize,
     hb_font: hb::Owned<hb::Font<'static>>,
@@ -356,13 +368,7 @@ pub struct Font {
     glyph_atlas_sampler: gfx::Sampler,
     glyph_atlas_uniform: UniformConstants,
     glyph_atlas_mesh: Mesh,
-    glyph_map: HashMap<u32, MeshIndexRange>,
-}
-
-struct BitmapData {
-    pixels: Vec<u8>,
-    width: i32,
-    rows: i32,
+    glyph_map: HashMap<u32, (MeshIndexRange, geometry2::Vector<f32>)>,
 }
 
 impl Font {
@@ -378,7 +384,12 @@ impl Font {
         // Setup harfbuzz font for future shaping.
         let mut hb_font = hb::Font::new(face.hb_face.clone());
         let ppem = ((64 * size * Self::RESOLUTION) as f32 / 72.) as u32;
-        hb_font.set_ppem(ppem, ppem);
+        // hb_font.set_ppem(ppem, ppem);
+
+        let (sx, sy) = hb_font.scale();
+        println!("Initila font scale: {}, {}", sx, sy);
+
+        hb_font.set_scale(ppem as i32, ppem as i32);
 
         println!("Size: {}, ppem: {}", size, ppem);
 
@@ -391,11 +402,14 @@ impl Font {
             face.ft_face
                 .load_char(*c as usize, ft::face::LoadFlag::RENDER)
                 .unwrap();
-            let bitmap = face.ft_face.glyph().bitmap();
+            let glyph = face.ft_face.glyph();
+            let bitmap = glyph.bitmap();
             glyphs.push((
                 face.ft_face.get_char_index(*c as usize),
                 BitmapData {
                     pixels: Vec::from(bitmap.buffer()),
+                    left: glyph.bitmap_left(),
+                    top: glyph.bitmap_top(),
                     width: bitmap.width(),
                     rows: bitmap.rows(),
                 },
@@ -404,9 +418,11 @@ impl Font {
             // Best thing to do is not render here, just make a loop to find max size.
             // Reload the chars afterwards with bitmap rendereing.
             println!(
-                "New glyph: {}, {}, width: {}, rows: {}",
+                "New glyph: {}, {}, left: {}, top: {}, width: {}, rows: {}",
                 *c,
                 face.ft_face.get_char_index(*c as usize),
+                glyph.bitmap_left(),
+                glyph.bitmap_top(),
                 bitmap.width(),
                 bitmap.rows()
             );
@@ -471,7 +487,13 @@ impl Font {
 
             let indices_begin = (i * 6) as u32;
             let indices_end = indices_begin + 6;
-            glyph_map.insert(c, indices_begin..indices_end);
+            glyph_map.insert(
+                c,
+                (
+                    indices_begin..indices_end,
+                    geometry2::Vector::new(g.left as f32, -g.top as f32),
+                ),
+            );
         }
 
         let glyph_atlas = gfx::Texture::new(

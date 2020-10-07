@@ -142,8 +142,8 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
         let font = text::Font::new(
             &instance,
             &face,
-            20,
-            &['I', 'A', 'E'], // text::CharacterSet::english().as_slice(),
+            10,
+            text::CharacterSet::english().as_slice(),
         );
 
         Ok(Self {
@@ -188,7 +188,7 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
             rpass.draw_text(
                 &self.pipeline,
                 &self.font,
-                "IIIIAAAAAEEEEEE",
+                "Lorem ipsum dolor sit amet",
                 convert(self.projection_transform * Translation::new(100., 100.)),
             );
         }
