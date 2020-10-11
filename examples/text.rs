@@ -1,18 +1,15 @@
 extern crate rae_text as text;
 
-use std::iter::once;
-
 use rae_app::{
     application::Application,
-    event::{mouse, ControlFlow, DeviceId, EventHandler, EventLoop},
+    event::{ControlFlow, EventHandler, EventLoop},
     window,
     window::{WindowBuilder, WindowId},
 };
 
 use rae_math::{
     conversion::convert,
-    geometry2::{OrthographicProjection, Point, Projective, Similarity, Translation, UnitComplex},
-    geometry3,
+    geometry2::{OrthographicProjection, Projective, Translation},
 };
 
 use rae_gfx::core::{
@@ -175,7 +172,7 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
         Ok(ControlFlow::Continue)
     }
 
-    fn on_variable_update(&mut self, dt: std::time::Duration) -> Result<ControlFlow, Self::Error> {
+    fn on_variable_update(&mut self, _dt: std::time::Duration) -> Result<ControlFlow, Self::Error> {
         let frame = self.window.current_frame()?;
         let mut cmd_sequence = CommandSequence::new(&self.instance);
 
@@ -190,6 +187,12 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
                 &self.font,
                 "Lorem ipsum dolor sit amet",
                 convert(self.projection_transform * Translation::new(100., 100.)),
+            );
+            rpass.draw_text(
+                &self.pipeline,
+                &self.font,
+                "Hello world!",
+                convert(self.projection_transform * Translation::new(300., 300.)),
             );
         }
 
