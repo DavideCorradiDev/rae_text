@@ -1,7 +1,7 @@
 extern crate freetype as ft;
 extern crate harfbuzz_rs as hb;
 
-use std::fmt::Debug;
+use std::{fmt::Debug, mem::size_of};
 
 use num_traits::Zero;
 
@@ -45,6 +45,12 @@ pub struct PushConstants {
 }
 
 impl PushConstants {
+    const TRANSFORM_MEM_OFFSET: u32 = 0;
+    const GLYPH_OFFSET_MEM_OFFSET: u32 =
+        Self::TRANSFORM_MEM_OFFSET + size_of::<geometry3::HomogeneousMatrix<f32>>() as u32;
+    const COLOR_MEM_OFFSET: u32 =
+        Self::GLYPH_OFFSET_MEM_OFFSET + size_of::<geometry3::HomogeneousVector<f32>>() as u32;
+
     pub fn new(
         transform: &geometry2::Transform<f32>,
         glyph_offset: &geometry2::Vector<f32>,
@@ -61,21 +67,24 @@ impl PushConstants {
         self.glyph_offset = geometry3::HomogeneousVector::new(value.x, value.y, 0., 0.);
     }
 
-    fn as_slice(&self) -> &[u32] {
+    fn full_slice(&self) -> &[u32] {
         let data: *const PushConstants = self;
         let data = data as *const u8;
-        let data =
-            unsafe { std::slice::from_raw_parts(data, std::mem::size_of::<PushConstants>()) };
+        let data = unsafe { std::slice::from_raw_parts(data, size_of::<PushConstants>()) };
         bytemuck::cast_slice(&data)
     }
 
-    fn glyph_offset_mem_offset(&self) -> u32 {
-        std::mem::size_of::<geometry3::HomogeneousMatrix<f32>>() as u32
+    fn transform_slice(&self) -> &[u32] {
+        bytemuck::cast_slice(self.transform.as_slice())
     }
 
     fn glyph_offset_slice(&self) -> &[u32] {
         bytemuck::cast_slice(self.glyph_offset.as_slice())
     }
+
+    // fn color_slice(&self) -> &[u32] {
+    //     bytemuck::cast_slice(self.color.as_slice())
+    // }
 }
 
 unsafe impl bytemuck::Zeroable for PushConstants {
@@ -305,7 +314,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
         let mut cursor_pos = geometry2::Vector::new(0., 0.);
         let mut pc = PushConstants::new(&transform, &cursor_pos, gfx::ColorF32::WHITE);
-        self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
+        self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.full_slice());
 
         for (position, info) in positions.iter().zip(infos) {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
@@ -320,7 +329,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
             self.set_push_constants(
                 gfx::ShaderStage::VERTEX,
-                pc.glyph_offset_mem_offset(),
+                PushConstants::GLYPH_OFFSET_MEM_OFFSET,
                 pc.glyph_offset_slice(),
             );
             self.draw_indexed(range, 0, 0..1);
