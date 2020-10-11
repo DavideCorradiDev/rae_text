@@ -57,11 +57,24 @@ impl PushConstants {
         }
     }
 
+    pub fn set_glyph_offset(&mut self, value: &geometry2::Vector<f32>) {
+        self.glyph_offset = geometry3::HomogeneousVector::new(value.x, value.y, 0., 0.);
+    }
+
     fn as_slice(&self) -> &[u32] {
-        let pc: *const PushConstants = self;
-        let pc: *const u8 = pc as *const u8;
-        let data = unsafe { std::slice::from_raw_parts(pc, std::mem::size_of::<PushConstants>()) };
+        let data: *const PushConstants = self;
+        let data = data as *const u8;
+        let data =
+            unsafe { std::slice::from_raw_parts(data, std::mem::size_of::<PushConstants>()) };
         bytemuck::cast_slice(&data)
+    }
+
+    fn glyph_offset_mem_offset(&self) -> u32 {
+        std::mem::size_of::<geometry3::HomogeneousMatrix<f32>>() as u32
+    }
+
+    fn glyph_offset_slice(&self) -> &[u32] {
+        bytemuck::cast_slice(self.glyph_offset.as_slice())
     }
 }
 
@@ -291,6 +304,9 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         self.set_vertex_buffer(0, font.vertex_buffer().slice(..));
 
         let mut cursor_pos = geometry2::Vector::new(0., 0.);
+        let mut pc = PushConstants::new(&transform, &cursor_pos, gfx::ColorF32::WHITE);
+        self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
+
         for (position, info) in positions.iter().zip(infos) {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
 
@@ -300,9 +316,13 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
                     i26dot6_to_fpoint(position.x_offset),
                     i26dot6_to_fpoint(position.y_offset),
                 );
-            let pc = PushConstants::new(&transform, &offset, gfx::ColorF32::WHITE);
+            pc.set_glyph_offset(&offset);
 
-            self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
+            self.set_push_constants(
+                gfx::ShaderStage::VERTEX,
+                pc.glyph_offset_mem_offset(),
+                pc.glyph_offset_slice(),
+            );
             self.draw_indexed(range, 0, 0..1);
 
             cursor_pos.x = cursor_pos.x + i26dot6_to_fpoint(position.x_advance);

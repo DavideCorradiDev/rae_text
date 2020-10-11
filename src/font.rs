@@ -92,11 +92,8 @@ impl Font {
         // hb_font.set_ppem(ppem, ppem);
 
         let (sx, sy) = hb_font.scale();
-        println!("Initila font scale: {}, {}", sx, sy);
 
         hb_font.set_scale(ppem as i32, ppem as i32);
-
-        println!("Size: {}, ppem: {}", size, ppem);
 
         // Load glyphs.
         face.ft_face
@@ -119,18 +116,10 @@ impl Font {
                     rows: bitmap.rows(),
                 },
             ));
-            // TODO: must make a deep copy of the buffer data before loading the next char.
-            // Best thing to do is not render here, just make a loop to find max size.
-            // Reload the chars afterwards with bitmap rendereing.
-            println!(
-                "New glyph: {}, {}, left: {}, top: {}, width: {}, rows: {}",
-                *c,
-                face.ft_face.get_char_index(*c as usize),
-                glyph.bitmap_left(),
-                glyph.bitmap_top(),
-                bitmap.width(),
-                bitmap.rows()
-            );
+            // TODO: must make a deep copy of the buffer data before loading the
+            // next char. Best thing to do is not render here, just
+            // make a loop to find max size. Reload the chars
+            // afterwards with bitmap rendereing.
         }
 
         // Create the glyph atlas.
@@ -146,11 +135,6 @@ impl Font {
         let glyph_atlas_row_byte_count = glyph_atlas_width as usize;
         let glyph_atlas_slice_byte_count = (glyph_atlas_width * glyph_atlas_height) as usize;
         let glyph_atlas_byte_count = glyph_atlas_slice_byte_count * glyph_atlas_depth as usize;
-
-        println!(
-            "glyph atlas extent: {:?}, slice size {}, full size {}",
-            glyph_atlas_extent, glyph_atlas_slice_byte_count, glyph_atlas_byte_count
-        );
 
         let mut glyph_atlas_buffer = vec![0; glyph_atlas_byte_count];
         let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
