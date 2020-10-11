@@ -243,7 +243,8 @@ pub trait Renderer<'a> {
         pipeline: &'a RenderPipeline,
         font: &'a Font,
         text: &str,
-        transform: geometry2::Transform<f32>,
+        transform: &geometry2::Transform<f32>,
+        color: &gfx::ColorF32,
     );
 }
 
@@ -253,7 +254,8 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         pipeline: &'a RenderPipeline,
         font: &'a Font,
         text: &str,
-        transform: geometry2::Transform<f32>,
+        transform: &geometry2::Transform<f32>,
+        color: &gfx::ColorF32,
     ) {
         let output = font.shape_text(text);
         let positions = output.get_glyph_positions();
@@ -267,7 +269,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         let pc = (
             transform.to_homogeneous3(),
             geometry3::HomogeneousVector::<f32>::zero(),
-            gfx::ColorF32::WHITE,
+            color.clone(),
         );
         self.set_push_constants(gfx::ShaderStage::VERTEX, 0, as_push_constants_slice(&pc));
 

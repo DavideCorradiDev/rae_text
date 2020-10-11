@@ -13,8 +13,8 @@ use rae_math::{
 };
 
 use rae_gfx::core::{
-    Canvas, CanvasWindow, CanvasWindowDescriptor, CommandSequence, Instance, InstanceCreationError,
-    InstanceDescriptor, RenderPassOperations, SampleCount, SwapChainError,
+    Canvas, CanvasWindow, CanvasWindowDescriptor, ColorF32, CommandSequence, Instance,
+    InstanceCreationError, InstanceDescriptor, RenderPassOperations, SampleCount, SwapChainError,
 };
 
 use text::Renderer as TextRenderer;
@@ -186,13 +186,15 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
                 &self.pipeline,
                 &self.font,
                 "Lorem ipsum dolor sit amet",
-                convert(self.projection_transform * Translation::new(100., 100.)),
+                &convert(self.projection_transform * Translation::new(100., 100.)),
+                &ColorF32::BLUE,
             );
             rpass.draw_text(
                 &self.pipeline,
                 &self.font,
                 "Hello world!",
-                convert(self.projection_transform * Translation::new(300., 300.)),
+                &convert(self.projection_transform * Translation::new(300., 300.)),
+                &ColorF32::RED,
             );
         }
 
