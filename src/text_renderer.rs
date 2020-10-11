@@ -5,10 +5,12 @@ use std::fmt::Debug;
 
 use num_traits::Zero;
 
+pub use gfx::{MeshIndex, MeshIndexRange};
 use rae_gfx::core as gfx;
+
 use rae_math::{conversion::ToHomogeneous3, geometry2, geometry3};
 
-use super::Font;
+use super::{i26dot6_to_fpoint, Font};
 
 #[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Vertex {
@@ -33,8 +35,6 @@ unsafe impl bytemuck::Zeroable for Vertex {
 
 unsafe impl bytemuck::Pod for Vertex {}
 
-pub type MeshIndexRange = gfx::MeshIndexRange;
-pub type MeshIndex = gfx::MeshIndex;
 pub type Mesh = gfx::IndexedMesh<Vertex>;
 
 #[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
@@ -272,7 +272,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         pipeline: &'a RenderPipeline,
         font: &'a Font,
         text: &str,
-        transform: geometry2::Transform<f32>,
+        text_transform: geometry2::Transform<f32>,
     ) {
         let output = font.shape_text(text);
         let positions = output.get_glyph_positions();
@@ -287,25 +287,22 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         for (position, info) in positions.iter().zip(infos) {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
 
-            let transform = transform
+            let transform = text_transform
                 * geometry2::Translation::from(
                     cursor_pos
                         + geometry2::Vector::new(
-                            position.x_offset as f32 / 64.,
-                            position.y_offset as f32 / 64.,
+                            i26dot6_to_fpoint(position.x_offset),
+                            i26dot6_to_fpoint(position.y_offset),
                         )
                         + bearing,
                 );
-
             let pc = PushConstants::new(&transform, gfx::ColorF32::WHITE);
 
             self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
             self.draw_indexed(range, 0, 0..1);
 
-            // TODO: we must check how to convert from the harfbuzz to the glsl scalar
-            // values.
-            cursor_pos.x = cursor_pos.x + position.x_advance as f32 / 64.;
-            cursor_pos.y = cursor_pos.y + position.y_advance as f32 / 64.;
+            cursor_pos.x = cursor_pos.x + i26dot6_to_fpoint(position.x_advance);
+            cursor_pos.y = cursor_pos.y + i26dot6_to_fpoint(position.y_advance);
         }
     }
 }

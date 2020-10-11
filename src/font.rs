@@ -15,6 +15,10 @@ pub type FaceIndex = u32;
 pub type CharIndex = u32;
 pub type FontSize = u32;
 
+pub fn i26dot6_to_fpoint(x: i32) -> f32 {
+    x as f32 / 64.
+}
+
 pub struct FontLibrary {
     ft_lib: ft::Library,
 }
