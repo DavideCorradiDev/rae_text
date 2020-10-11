@@ -3,7 +3,7 @@ extern crate harfbuzz_rs as hb;
 
 use std::{fmt::Debug, mem::size_of};
 
-use num_traits::Zero;
+use num_traits::identities::Zero;
 
 pub use gfx::{MeshIndex, MeshIndexRange};
 use rae_gfx::core as gfx;
@@ -11,6 +11,13 @@ use rae_gfx::core as gfx;
 use rae_math::{conversion::ToHomogeneousMatrix3, geometry2, geometry3};
 
 use super::{i26dot6_to_fpoint, Font};
+
+fn as_push_constants_slice<T>(value: &T) -> &[u32] {
+    let data: *const T = value;
+    let data = data as *const u8;
+    let data = unsafe { std::slice::from_raw_parts(data, size_of::<T>()) };
+    bytemuck::cast_slice(&data)
+}
 
 #[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Vertex {
@@ -36,71 +43,6 @@ unsafe impl bytemuck::Zeroable for Vertex {
 unsafe impl bytemuck::Pod for Vertex {}
 
 pub type Mesh = gfx::IndexedMesh<Vertex>;
-
-#[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
-pub struct PushConstants {
-    transform: geometry3::HomogeneousMatrix<f32>,
-    glyph_offset: geometry3::HomogeneousVector<f32>,
-    color: gfx::ColorF32,
-}
-
-impl PushConstants {
-    pub const TRANSFORM_MEM_OFFSET: u32 = 0;
-    pub const GLYPH_OFFSET_MEM_OFFSET: u32 =
-        Self::TRANSFORM_MEM_OFFSET + size_of::<geometry3::HomogeneousMatrix<f32>>() as u32;
-    pub const COLOR_MEM_OFFSET: u32 =
-        Self::GLYPH_OFFSET_MEM_OFFSET + size_of::<geometry3::HomogeneousVector<f32>>() as u32;
-
-    pub fn new(
-        transform: &geometry2::Transform<f32>,
-        glyph_offset: &geometry2::Vector<f32>,
-        color: gfx::ColorF32,
-    ) -> Self {
-        Self {
-            transform: transform.to_homogeneous3(),
-            glyph_offset: geometry3::HomogeneousVector::new(glyph_offset.x, glyph_offset.y, 0., 0.),
-            color,
-        }
-    }
-
-    pub fn set_glyph_offset(&mut self, value: &geometry2::Vector<f32>) {
-        self.glyph_offset = geometry3::HomogeneousVector::new(value.x, value.y, 0., 0.);
-    }
-
-    pub fn full_slice(&self) -> &[u32] {
-        let data: *const PushConstants = self;
-        let data = data as *const u8;
-        let data = unsafe { std::slice::from_raw_parts(data, size_of::<PushConstants>()) };
-        bytemuck::cast_slice(&data)
-    }
-
-    pub fn transform_slice(&self) -> &[u32] {
-        bytemuck::cast_slice(self.transform.as_slice())
-    }
-
-    pub fn glyph_offset_slice(&self) -> &[u32] {
-        bytemuck::cast_slice(self.glyph_offset.as_slice())
-    }
-
-    pub fn color_slice(&self) -> &[u32] {
-        let data = &self.color as *const gfx::ColorF32;
-        let data = data as *const u8;
-        let data = unsafe { std::slice::from_raw_parts(data, size_of::<gfx::ColorF32>()) };
-        bytemuck::cast_slice(data)
-    }
-}
-
-unsafe impl bytemuck::Zeroable for PushConstants {
-    fn zeroed() -> Self {
-        Self {
-            transform: geometry3::HomogeneousMatrix::zero(),
-            glyph_offset: geometry3::HomogeneousVector::zero(),
-            color: gfx::ColorF32::default(),
-        }
-    }
-}
-
-unsafe impl bytemuck::Pod for PushConstants {}
 
 fn bind_group_layout(instance: &gfx::Instance) -> gfx::BindGroupLayout {
     gfx::BindGroupLayout::new(
@@ -191,6 +133,13 @@ impl Default for RenderPipelineDescriptor {
     }
 }
 
+const PC_TRANSFORM_MEM_OFFSET: u32 = 0;
+const PC_GLYPH_OFFSET_MEM_OFFSET: u32 =
+    PC_TRANSFORM_MEM_OFFSET + size_of::<geometry3::HomogeneousMatrix<f32>>() as u32;
+const PC_COLOR_MEM_OFFSET: u32 =
+    PC_GLYPH_OFFSET_MEM_OFFSET + size_of::<geometry3::HomogeneousVector<f32>>() as u32;
+const PC_SIZE: u32 = PC_COLOR_MEM_OFFSET + size_of::<gfx::ColorF32>() as u32;
+
 #[derive(Debug)]
 pub struct RenderPipeline {
     pipeline: gfx::RenderPipeline,
@@ -209,7 +158,7 @@ impl RenderPipeline {
                 bind_group_layouts: &[&bind_group_layout],
                 push_constant_ranges: &[gfx::PushConstantRange {
                     stages: gfx::ShaderStage::VERTEX,
-                    range: 0..std::mem::size_of::<PushConstants>() as u32,
+                    range: 0..PC_SIZE,
                 }],
             },
         );
@@ -315,25 +264,25 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         self.set_index_buffer(font.index_buffer().slice(..));
         self.set_vertex_buffer(0, font.vertex_buffer().slice(..));
 
-        let mut cursor_pos = geometry2::Vector::new(0., 0.);
-        let mut pc = PushConstants::new(&transform, &cursor_pos, gfx::ColorF32::WHITE);
-        self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.full_slice());
+        let pc = (
+            transform.to_homogeneous3(),
+            geometry3::HomogeneousVector::<f32>::zero(),
+            gfx::ColorF32::WHITE,
+        );
+        self.set_push_constants(gfx::ShaderStage::VERTEX, 0, as_push_constants_slice(&pc));
 
+        let mut cursor_pos = geometry2::HomogeneousVector::<f32>::zero();
         for (position, info) in positions.iter().zip(infos) {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
 
-            let offset = cursor_pos
-                + bearing
-                + geometry2::Vector::new(
-                    i26dot6_to_fpoint(position.x_offset),
-                    i26dot6_to_fpoint(position.y_offset),
-                );
-            pc.set_glyph_offset(&offset);
+            let mut offset = cursor_pos;
+            offset.x = offset.x + bearing.x + i26dot6_to_fpoint(position.x_offset);
+            offset.y = offset.y + bearing.y + i26dot6_to_fpoint(position.y_offset);
 
             self.set_push_constants(
                 gfx::ShaderStage::VERTEX,
-                PushConstants::GLYPH_OFFSET_MEM_OFFSET,
-                pc.glyph_offset_slice(),
+                PC_GLYPH_OFFSET_MEM_OFFSET,
+                as_push_constants_slice(&offset),
             );
             self.draw_indexed(range, 0, 0..1);
 
