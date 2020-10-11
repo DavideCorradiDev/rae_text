@@ -90,9 +90,6 @@ impl Font {
         let mut hb_font = hb::Font::new(face.hb_face.clone());
         let ppem = ((64 * size * Self::RESOLUTION) as f32 / 72.) as u32;
         // hb_font.set_ppem(ppem, ppem);
-
-        let (sx, sy) = hb_font.scale();
-
         hb_font.set_scale(ppem as i32, ppem as i32);
 
         // Load glyphs.

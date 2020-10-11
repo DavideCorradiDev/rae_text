@@ -82,9 +82,12 @@ impl PushConstants {
         bytemuck::cast_slice(self.glyph_offset.as_slice())
     }
 
-    // pub fn color_slice(&self) -> &[u32] {
-    //     bytemuck::cast_slice(self.color.as_slice())
-    // }
+    pub fn color_slice(&self) -> &[u32] {
+        let data = &self.color as *const gfx::ColorF32;
+        let data = data as *const u8;
+        let data = unsafe { std::slice::from_raw_parts(data, size_of::<gfx::ColorF32>()) };
+        bytemuck::cast_slice(data)
+    }
 }
 
 unsafe impl bytemuck::Zeroable for PushConstants {
