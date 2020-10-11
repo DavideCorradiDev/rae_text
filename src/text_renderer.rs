@@ -8,7 +8,7 @@ use num_traits::Zero;
 pub use gfx::{MeshIndex, MeshIndexRange};
 use rae_gfx::core as gfx;
 
-use rae_math::{conversion::ToHomogeneous3, geometry2, geometry3};
+use rae_math::{conversion::ToHomogeneousMatrix3, geometry2, geometry3};
 
 use super::{i26dot6_to_fpoint, Font};
 
@@ -40,13 +40,19 @@ pub type Mesh = gfx::IndexedMesh<Vertex>;
 #[derive(Debug, PartialEq, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct PushConstants {
     transform: geometry3::HomogeneousMatrix<f32>,
+    glyph_offset: geometry3::HomogeneousVector<f32>,
     color: gfx::ColorF32,
 }
 
 impl PushConstants {
-    pub fn new(transform: &geometry2::Transform<f32>, color: gfx::ColorF32) -> Self {
+    pub fn new(
+        transform: &geometry2::Transform<f32>,
+        glyph_offset: &geometry2::Vector<f32>,
+        color: gfx::ColorF32,
+    ) -> Self {
         Self {
             transform: transform.to_homogeneous3(),
+            glyph_offset: geometry3::HomogeneousVector::new(glyph_offset.x, glyph_offset.y, 0., 0.),
             color,
         }
     }
@@ -63,6 +69,7 @@ unsafe impl bytemuck::Zeroable for PushConstants {
     fn zeroed() -> Self {
         Self {
             transform: geometry3::HomogeneousMatrix::zero(),
+            glyph_offset: geometry3::HomogeneousVector::zero(),
             color: gfx::ColorF32::default(),
         }
     }
@@ -272,7 +279,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         pipeline: &'a RenderPipeline,
         font: &'a Font,
         text: &str,
-        text_transform: geometry2::Transform<f32>,
+        transform: geometry2::Transform<f32>,
     ) {
         let output = font.shape_text(text);
         let positions = output.get_glyph_positions();
@@ -287,16 +294,13 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         for (position, info) in positions.iter().zip(infos) {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
 
-            let transform = text_transform
-                * geometry2::Translation::from(
-                    cursor_pos
-                        + geometry2::Vector::new(
-                            i26dot6_to_fpoint(position.x_offset),
-                            i26dot6_to_fpoint(position.y_offset),
-                        )
-                        + bearing,
+            let offset = cursor_pos
+                + bearing
+                + geometry2::Vector::new(
+                    i26dot6_to_fpoint(position.x_offset),
+                    i26dot6_to_fpoint(position.y_offset),
                 );
-            let pc = PushConstants::new(&transform, gfx::ColorF32::WHITE);
+            let pc = PushConstants::new(&transform, &offset, gfx::ColorF32::WHITE);
 
             self.set_push_constants(gfx::ShaderStage::VERTEX, 0, pc.as_slice());
             self.draw_indexed(range, 0, 0..1);

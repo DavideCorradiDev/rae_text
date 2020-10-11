@@ -5,7 +5,7 @@ authors = ["Davide Corradi <davide.corradi.dev@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-rae_math = { git = "https://github.com/DavideCorradiDev/rae_math.git", tag = "v0.1.1", features = [
+rae_math = { git = "https://github.com/DavideCorradiDev/rae_math.git", tag = "v0.1.2", features = [
     "serde-serialize"
 ] }
 rae_gfx = { git = "https://github.com/DavideCorradiDev/rae_gfx.git", tag = "v0.1.1" }
