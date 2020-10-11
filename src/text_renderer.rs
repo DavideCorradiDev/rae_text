@@ -45,10 +45,10 @@ pub struct PushConstants {
 }
 
 impl PushConstants {
-    const TRANSFORM_MEM_OFFSET: u32 = 0;
-    const GLYPH_OFFSET_MEM_OFFSET: u32 =
+    pub const TRANSFORM_MEM_OFFSET: u32 = 0;
+    pub const GLYPH_OFFSET_MEM_OFFSET: u32 =
         Self::TRANSFORM_MEM_OFFSET + size_of::<geometry3::HomogeneousMatrix<f32>>() as u32;
-    const COLOR_MEM_OFFSET: u32 =
+    pub const COLOR_MEM_OFFSET: u32 =
         Self::GLYPH_OFFSET_MEM_OFFSET + size_of::<geometry3::HomogeneousVector<f32>>() as u32;
 
     pub fn new(
@@ -67,22 +67,22 @@ impl PushConstants {
         self.glyph_offset = geometry3::HomogeneousVector::new(value.x, value.y, 0., 0.);
     }
 
-    fn full_slice(&self) -> &[u32] {
+    pub fn full_slice(&self) -> &[u32] {
         let data: *const PushConstants = self;
         let data = data as *const u8;
         let data = unsafe { std::slice::from_raw_parts(data, size_of::<PushConstants>()) };
         bytemuck::cast_slice(&data)
     }
 
-    fn transform_slice(&self) -> &[u32] {
+    pub fn transform_slice(&self) -> &[u32] {
         bytemuck::cast_slice(self.transform.as_slice())
     }
 
-    fn glyph_offset_slice(&self) -> &[u32] {
+    pub fn glyph_offset_slice(&self) -> &[u32] {
         bytemuck::cast_slice(self.glyph_offset.as_slice())
     }
 
-    // fn color_slice(&self) -> &[u32] {
+    // pub fn color_slice(&self) -> &[u32] {
     //     bytemuck::cast_slice(self.color.as_slice())
     // }
 }
