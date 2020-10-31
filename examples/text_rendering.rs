@@ -139,7 +139,7 @@ impl EventHandler<ApplicationError, ApplicationEvent> for ApplicationImpl {
         let font = text::Font::new(
             &instance,
             &face,
-            10,
+            10.,
             text::CharacterSet::english().as_slice(),
         );
 

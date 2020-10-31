@@ -1,7 +1,7 @@
 extern crate freetype as ft;
 extern crate harfbuzz_rs as hb;
 
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, iter::IntoIterator};
 
 use rae_gfx::core as gfx;
 use rae_math::geometry2;
@@ -13,11 +13,28 @@ pub use hb::GlyphBuffer as TextShapingInfo;
 
 pub type FaceIndex = u32;
 pub type CharIndex = u32;
-pub type FontSize = u32;
 
-pub fn i26dot6_to_fpoint(x: i32) -> f32 {
-    x as f32 / 64.
+pub type FSize = f32;
+pub type I26Dot6Size = i32;
+pub type PpemSize = i32;
+
+pub fn i26dot6_to_fsize(x: I26Dot6Size) -> FSize {
+    x as FSize / 64.
 }
+
+pub fn fsize_to_i26dot6(x: FSize) -> I26Dot6Size {
+    (x * 64.) as I26Dot6Size
+}
+
+pub fn i26dot6_to_ppem(x: I26Dot6Size, res: PpemSize) -> PpemSize {
+    x * res / 72
+}
+
+pub fn ppem_to_i26dot6(x: PpemSize, res: PpemSize) -> I26Dot6Size {
+    x * 72 / res
+}
+
+// TODO: hide the library?
 
 pub struct FontLibrary {
     ft_lib: ft::Library,
@@ -67,7 +84,7 @@ struct BitmapData {
 
 #[derive(Debug)]
 pub struct Font {
-    size: FontSize,
+    size: FSize,
     hb_font: hb::Owned<hb::Font<'static>>,
     glyph_atlas: gfx::TextureView,
     glyph_atlas_sampler: gfx::Sampler,
@@ -77,24 +94,24 @@ pub struct Font {
 }
 
 impl Font {
-    const RESOLUTION: u32 = 300;
+    const RESOLUTION: i32 = 300;
 
-    // TODO: generic iterator interface for characters.
     // TODO: make sure that the size computation is appropriate.
     // TODO: replace unwrap calls.
     // TODO: why is bytes per row proportional to the height rather than the width?
-    pub fn new(instance: &gfx::Instance, face: &Face, size: FontSize, characters: &[char]) -> Self {
+    pub fn new(instance: &gfx::Instance, face: &Face, size: FSize, characters: &[char]) -> Self {
         assert!(!characters.is_empty());
+
+        let size_i26dot6 = fsize_to_i26dot6(size);
+        let size_ppem = i26dot6_to_ppem(size_i26dot6, Self::RESOLUTION);
 
         // Setup harfbuzz font for future shaping.
         let mut hb_font = hb::Font::new(face.hb_face.clone());
-        let ppem = ((64 * size * Self::RESOLUTION) as f32 / 72.) as u32;
-        // hb_font.set_ppem(ppem, ppem);
-        hb_font.set_scale(ppem as i32, ppem as i32);
+        hb_font.set_scale(size_ppem as i32, size_ppem as i32);
 
         // Load glyphs.
         face.ft_face
-            .set_char_size(0, (64 * size) as isize, 0, Self::RESOLUTION)
+            .set_char_size(0, size_i26dot6 as isize, 0, Self::RESOLUTION as u32)
             .unwrap();
         let mut glyphs = Vec::with_capacity(characters.len());
         for c in characters {
@@ -223,7 +240,7 @@ impl Font {
         }
     }
 
-    pub fn size(&self) -> FontSize {
+    pub fn size(&self) -> FSize {
         self.size
     }
 
@@ -281,7 +298,7 @@ mod tests {
         let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
         let lib = FontLibrary::new().unwrap();
         let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
-        let _font = Font::new(&instance, &face, 12, &['a', 'Z', '2', '#']);
+        let _font = Font::new(&instance, &face, 12., &['a', 'Z', '2', '#']);
     }
 
     #[test]
@@ -289,6 +306,6 @@ mod tests {
         let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
         let lib = FontLibrary::new().unwrap();
         let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
-        let _font = Font::new(&instance, &face, 12, CharacterSet::english().as_slice());
+        let _font = Font::new(&instance, &face, 12., CharacterSet::english().as_slice());
     }
 }

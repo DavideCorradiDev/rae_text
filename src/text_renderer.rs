@@ -10,7 +10,7 @@ use rae_gfx::core as gfx;
 
 use rae_math::{conversion::ToHomogeneousMatrix3, geometry2, geometry3};
 
-use super::{i26dot6_to_fpoint, Font};
+use super::{i26dot6_to_fsize, Font};
 
 fn as_push_constants_slice<T>(value: &T) -> &[u32] {
     let data: *const T = value;
@@ -278,8 +278,8 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
             let (range, bearing) = font.glyph_info(&info.codepoint).clone();
 
             let mut offset = cursor_pos;
-            offset.x = offset.x + bearing.x + i26dot6_to_fpoint(position.x_offset);
-            offset.y = offset.y + bearing.y + i26dot6_to_fpoint(position.y_offset);
+            offset.x = offset.x + bearing.x + i26dot6_to_fsize(position.x_offset);
+            offset.y = offset.y + bearing.y + i26dot6_to_fsize(position.y_offset);
 
             self.set_push_constants(
                 gfx::ShaderStage::VERTEX,
@@ -288,8 +288,8 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
             );
             self.draw_indexed(range, 0, 0..1);
 
-            cursor_pos.x = cursor_pos.x + i26dot6_to_fpoint(position.x_advance);
-            cursor_pos.y = cursor_pos.y + i26dot6_to_fpoint(position.y_advance);
+            cursor_pos.x = cursor_pos.x + i26dot6_to_fsize(position.x_advance);
+            cursor_pos.y = cursor_pos.y + i26dot6_to_fsize(position.y_advance);
         }
     }
 }
