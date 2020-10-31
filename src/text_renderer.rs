@@ -10,7 +10,7 @@ use rae_gfx::core as gfx;
 
 use rae_math::{conversion::ToHomogeneousMatrix3, geometry2, geometry3};
 
-use super::{i26dot6_to_fsize, Font};
+use super::{i26dot6_to_fsize, Font, GlyphRenderingInfo};
 
 fn as_push_constants_slice<T>(value: &T) -> &[u32] {
     let data: *const T = value;
@@ -257,9 +257,9 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
         transform: &geometry2::Transform<f32>,
         color: &gfx::ColorF32,
     ) {
-        let output = font.shape_text(text);
-        let positions = output.get_glyph_positions();
-        let infos = output.get_glyph_infos();
+        let shaping_output = font.shape_text(text);
+        let positions = shaping_output.get_glyph_positions();
+        let infos = shaping_output.get_glyph_infos();
 
         self.set_pipeline(&pipeline.pipeline);
         self.set_bind_group(0, &font.uniform_constants().bind_group, &[]);
@@ -275,7 +275,10 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
 
         let mut cursor_pos = geometry2::HomogeneousVector::<f32>::zero();
         for (position, info) in positions.iter().zip(infos) {
-            let (range, bearing) = font.glyph_info(&info.codepoint).clone();
+            let GlyphRenderingInfo {
+                index_range,
+                bearing,
+            } = font.glyph_rendering_info(&info.codepoint).clone();
 
             let mut offset = cursor_pos;
             offset.x = offset.x + bearing.x + i26dot6_to_fsize(position.x_offset);
@@ -286,7 +289,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
                 PC_GLYPH_OFFSET_MEM_OFFSET,
                 as_push_constants_slice(&offset),
             );
-            self.draw_indexed(range, 0, 0..1);
+            self.draw_indexed(index_range.clone(), 0, 0..1);
 
             cursor_pos.x = cursor_pos.x + i26dot6_to_fsize(position.x_advance);
             cursor_pos.y = cursor_pos.y + i26dot6_to_fsize(position.y_advance);

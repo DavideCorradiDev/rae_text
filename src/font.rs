@@ -129,6 +129,12 @@ impl GlyphSet {
 }
 
 #[derive(Debug)]
+pub struct GlyphRenderingInfo {
+    pub index_range: MeshIndexRange,
+    pub bearing: geometry2::Vector<f32>,
+}
+
+#[derive(Debug)]
 pub struct Font {
     size: FontSize,
     hb_font: hb::Owned<hb::Font<'static>>,
@@ -136,15 +142,13 @@ pub struct Font {
     glyph_atlas_sampler: gfx::Sampler,
     glyph_atlas_uniform: UniformConstants,
     glyph_atlas_mesh: Mesh,
-    glyph_atlas_map: HashMap<u32, (MeshIndexRange, geometry2::Vector<f32>)>,
+    glyph_atlas_map: HashMap<CharIndex, GlyphRenderingInfo>,
 }
 
 impl Font {
     const RESOLUTION: FontResolution = 300;
 
-    // TODO: make sure that the size computation is appropriate.
     // TODO: replace unwrap calls.
-    // TODO: why is bytes per row proportional to the height rather than the width?
     pub fn new(instance: &gfx::Instance, face: &Face, size: FontSize, characters: &[char]) -> Self {
         assert!(!characters.is_empty());
         assert!(size > 0.);
@@ -254,19 +258,17 @@ impl Font {
         Mesh::new(instance, &glyph_atlas_vertices, &glyph_atlas_indices)
     }
 
-    fn create_glyph_atlas_map(
-        glyph_set: &GlyphSet,
-    ) -> HashMap<u32, (MeshIndexRange, geometry2::Vector<f32>)> {
+    fn create_glyph_atlas_map(glyph_set: &GlyphSet) -> HashMap<CharIndex, GlyphRenderingInfo> {
         let mut glyph_atlas_map = HashMap::new();
         for (i, g) in glyph_set.glyphs.iter().enumerate() {
             let indices_begin = (i * 6) as u32;
-            let indices_end = indices_begin + 6;
+            let indices_end = indices_begin + 6 as u32;
             glyph_atlas_map.insert(
                 g.char_index,
-                (
-                    indices_begin..indices_end,
-                    geometry2::Vector::new(g.left as f32, -g.top as f32),
-                ),
+                GlyphRenderingInfo {
+                    index_range: indices_begin..indices_end,
+                    bearing: geometry2::Vector::new(g.left as f32, -g.top as f32),
+                },
             );
         }
         glyph_atlas_map
@@ -281,7 +283,7 @@ impl Font {
         hb::shape(&self.hb_font, buffer, &[])
     }
 
-    pub fn glyph_info(&self, char_index: &CharIndex) -> &(MeshIndexRange, geometry2::Vector<f32>) {
+    pub fn glyph_rendering_info(&self, char_index: &CharIndex) -> &GlyphRenderingInfo {
         &self.glyph_atlas_map[char_index]
     }
 
