@@ -35,6 +35,14 @@ pub fn ppem_to_i26dot6(x: PpemSize, res: FontResolution) -> I26Dot6Size {
     x * 72 / res as I26Dot6Size
 }
 
+pub fn fsize_to_ppem(x: FontSize, res: FontResolution) -> PpemSize {
+    i26dot6_to_ppem(fsize_to_i26dot6(x), res)
+}
+
+pub fn ppem_to_fsize(x: PpemSize, res: FontResolution) -> FontSize {
+    i26dot6_to_fsize(ppem_to_i26dot6(x, res))
+}
+
 // TODO: hide the library?
 // TODO: replace unwrap calls with proper error handling.
 // TODO: add error case tests.
@@ -44,6 +52,8 @@ pub fn ppem_to_i26dot6(x: PpemSize, res: FontResolution) -> I26Dot6Size {
 // TODO: test with non-latin font.
 // TODO: right-left / top-down text.
 // TODO: formatted text rendering.
+// TODO: newline, text breaks.
+// TODO: unknown character placeholder rendering.
 
 pub struct FontLibrary {
     ft_lib: ft::Library,
@@ -189,7 +199,7 @@ impl Font {
 
     fn create_shaper(face: &Face, size: FontSize) -> hb::Owned<hb::Font<'static>> {
         let mut hb_font = hb::Font::new(face.hb_face.clone());
-        let size_ppem = i26dot6_to_ppem(fsize_to_i26dot6(size), Self::RESOLUTION);
+        let size_ppem = fsize_to_ppem(size, Self::RESOLUTION);
         hb_font.set_scale(size_ppem, size_ppem);
         hb_font
     }
