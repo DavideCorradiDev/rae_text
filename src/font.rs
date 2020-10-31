@@ -1,7 +1,7 @@
 extern crate freetype as ft;
 extern crate harfbuzz_rs as hb;
 
-use std::{collections::HashMap, fmt::Debug, iter::IntoIterator};
+use std::{collections::HashMap, fmt::Debug};
 
 use rae_gfx::core as gfx;
 use rae_math::geometry2;
@@ -109,41 +109,74 @@ pub struct Font {
 impl Font {
     const RESOLUTION: i32 = 300;
 
-    // TODO: make sure that the size computation is appropriate.
     // TODO: replace unwrap calls.
-    // TODO: why is bytes per row proportional to the height rather than the width?
     pub fn new(instance: &gfx::Instance, face: &Face, size: FSize, characters: &[char]) -> Self {
         assert!(!characters.is_empty());
 
-        let size_i26dot6 = fsize_to_i26dot6(size);
-        let size_ppem = i26dot6_to_ppem(size_i26dot6, Self::RESOLUTION);
-
-        // Setup harfbuzz font for future shaping.
-        let mut hb_font = hb::Font::new(face.hb_face.clone());
-        hb_font.set_scale(size_ppem as i32, size_ppem as i32);
-
-        // Load glyphs.
         let bitmap_data = Self::load_bitmap_data(face, characters);
+        let extent = Self::compute_glyph_atlas_extent(&bitmap_data);
 
-        // Create the glyph atlas.
+        let hb_font = Self::create_hb_font(face, size);
+        let glyph_atlas = Self::generate_glyph_atlas_texture(instance, &bitmap_data, &extent);
+        let glyph_atlas_sampler = gfx::Sampler::new(instance, &gfx::SamplerDescriptor::default());
+        let glyph_atlas_uniform =
+            UniformConstants::new(instance, &glyph_atlas, &glyph_atlas_sampler);
+        let glyph_atlas_mesh = Self::generate_glyph_atlas_mesh(instance, &bitmap_data, &extent);
+        let glyph_map = Self::generate_glyph_atlas_map(&bitmap_data);
+
+        Self {
+            size,
+            hb_font,
+            glyph_atlas,
+            glyph_atlas_sampler,
+            glyph_atlas_uniform,
+            glyph_atlas_mesh,
+            glyph_map,
+        }
+    }
+
+    fn create_hb_font(face: &Face, size: FSize) -> hb::Owned<hb::Font<'static>> {
+        let mut hb_font = hb::Font::new(face.hb_face.clone());
+        let size_ppem = i26dot6_to_ppem(fsize_to_i26dot6(size), Self::RESOLUTION) as i32;
+        hb_font.set_scale(size_ppem, size_ppem);
+        hb_font
+    }
+
+    fn load_bitmap_data(face: &Face, characters: &[char]) -> Vec<(u32, BitmapData)> {
+        let mut bitmap_data = Vec::with_capacity(characters.len());
+        for c in characters {
+            face.ft_face
+                .load_char(*c as usize, ft::face::LoadFlag::RENDER)
+                .unwrap();
+            bitmap_data.push((
+                face.ft_face.get_char_index(*c as usize),
+                BitmapData::from(face.ft_face.glyph()),
+            ));
+        }
+        bitmap_data
+    }
+
+    fn compute_glyph_atlas_extent(bitmap_data: &Vec<(u32, BitmapData)>) -> gfx::Extent3d {
         let glyph_atlas_width = bitmap_data.iter().map(|x| x.1.width).max().unwrap() as u32;
         let glyph_atlas_height = bitmap_data.iter().map(|x| x.1.rows).max().unwrap() as u32;
-        let glyph_atlas_depth = characters.len() as u32;
-        let glyph_atlas_extent = gfx::Extent3d {
+        let glyph_atlas_depth = bitmap_data.len() as u32;
+        gfx::Extent3d {
             width: glyph_atlas_width,
             height: glyph_atlas_height,
             depth: glyph_atlas_depth,
-        };
+        }
+    }
 
-        let glyph_atlas_row_byte_count = glyph_atlas_width as usize;
-        let glyph_atlas_slice_byte_count = (glyph_atlas_width * glyph_atlas_height) as usize;
-        let glyph_atlas_byte_count = glyph_atlas_slice_byte_count * glyph_atlas_depth as usize;
+    fn generate_glyph_atlas_buffer(
+        bitmap_data: &Vec<(u32, BitmapData)>,
+        extent: &gfx::Extent3d,
+    ) -> Vec<u8> {
+        let glyph_atlas_row_byte_count = extent.width as usize;
+        let glyph_atlas_slice_byte_count = (extent.width * extent.height) as usize;
+        let glyph_atlas_byte_count = glyph_atlas_slice_byte_count * extent.depth as usize;
 
         let mut glyph_atlas_buffer = vec![0; glyph_atlas_byte_count];
-        let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
-        let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
-        let mut glyph_map = HashMap::new();
-        for (i, (c, g)) in bitmap_data.into_iter().enumerate() {
+        for (i, (_, g)) in bitmap_data.iter().enumerate() {
             let slice_begin = i * glyph_atlas_slice_byte_count;
             for row in 0..g.rows {
                 let image_begin = slice_begin + row as usize * glyph_atlas_row_byte_count;
@@ -153,11 +186,57 @@ impl Font {
                 glyph_atlas_buffer[image_begin..image_end]
                     .copy_from_slice(&g.pixels[pixels_begin..pixels_end]);
             }
+        }
+        glyph_atlas_buffer
+    }
 
+    fn generate_glyph_atlas_texture(
+        instance: &gfx::Instance,
+        bitmap_data: &Vec<(u32, BitmapData)>,
+        extent: &gfx::Extent3d,
+    ) -> gfx::TextureView {
+        let glyph_atlas_buffer = Self::generate_glyph_atlas_buffer(bitmap_data, extent);
+
+        let glyph_atlas = gfx::Texture::new(
+            instance,
+            &gfx::TextureDescriptor {
+                label: None,
+                size: *extent,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: gfx::TextureDimension::D2,
+                format: gfx::TextureFormat::R8Unorm,
+                usage: gfx::TextureUsage::SAMPLED | gfx::TextureUsage::COPY_DST,
+            },
+        );
+        glyph_atlas.write(
+            instance,
+            0,
+            gfx::Origin3d::ZERO,
+            glyph_atlas_buffer.as_slice(),
+            gfx::TextureDataLayout {
+                offset: 0,
+                bytes_per_row: extent.width,
+                rows_per_image: extent.height,
+            },
+            *extent,
+        );
+
+        glyph_atlas.create_view(&gfx::TextureViewDescriptor::default())
+    }
+
+    fn generate_glyph_atlas_mesh(
+        instance: &gfx::Instance,
+        bitmap_data: &Vec<(u32, BitmapData)>,
+        extent: &gfx::Extent3d,
+    ) -> Mesh {
+        let mut glyph_atlas_vertices = Vec::with_capacity(bitmap_data.len() * 4);
+        let mut glyph_atlas_indices = Vec::with_capacity(bitmap_data.len() * 6);
+        for (i, (_, g)) in bitmap_data.iter().enumerate() {
             let gw = g.width as f32;
             let gh = g.rows as f32;
-            let tw = gw / glyph_atlas_width as f32;
-            let th = gh / glyph_atlas_height as f32;
+            let tw = gw / extent.width as f32;
+            let th = gh / extent.height as f32;
             let idx = i as f32;
             glyph_atlas_vertices.extend_from_slice(&[
                 Vertex::new([0., 0.], [0., 0., idx]),
@@ -175,72 +254,26 @@ impl Font {
                 vertices_begin + 1,
                 vertices_begin + 2,
             ]);
+        }
+        Mesh::new(instance, &glyph_atlas_vertices, &glyph_atlas_indices)
+    }
 
+    fn generate_glyph_atlas_map(
+        bitmap_data: &Vec<(u32, BitmapData)>,
+    ) -> HashMap<u32, (MeshIndexRange, geometry2::Vector<f32>)> {
+        let mut glyph_map = HashMap::new();
+        for (i, (c, g)) in bitmap_data.iter().enumerate() {
             let indices_begin = (i * 6) as u32;
             let indices_end = indices_begin + 6;
             glyph_map.insert(
-                c,
+                *c,
                 (
                     indices_begin..indices_end,
                     geometry2::Vector::new(g.left as f32, -g.top as f32),
                 ),
             );
         }
-
-        let glyph_atlas = gfx::Texture::new(
-            instance,
-            &gfx::TextureDescriptor {
-                label: None,
-                size: glyph_atlas_extent,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: gfx::TextureDimension::D2,
-                format: gfx::TextureFormat::R8Unorm,
-                usage: gfx::TextureUsage::SAMPLED | gfx::TextureUsage::COPY_DST,
-            },
-        );
-        glyph_atlas.write(
-            instance,
-            0,
-            gfx::Origin3d::ZERO,
-            glyph_atlas_buffer.as_slice(),
-            gfx::TextureDataLayout {
-                offset: 0,
-                bytes_per_row: glyph_atlas_width,
-                rows_per_image: glyph_atlas_height,
-            },
-            glyph_atlas_extent,
-        );
-
-        let glyph_atlas = glyph_atlas.create_view(&gfx::TextureViewDescriptor::default());
-        let glyph_atlas_sampler = gfx::Sampler::new(instance, &gfx::SamplerDescriptor::default());
-        let glyph_atlas_uniform =
-            UniformConstants::new(instance, &glyph_atlas, &glyph_atlas_sampler);
-        let glyph_atlas_mesh = Mesh::new(instance, &glyph_atlas_vertices, &glyph_atlas_indices);
-
-        Self {
-            size,
-            hb_font,
-            glyph_atlas,
-            glyph_atlas_sampler,
-            glyph_atlas_uniform,
-            glyph_atlas_mesh,
-            glyph_map,
-        }
-    }
-
-    fn load_bitmap_data(face: &Face, characters: &[char]) -> Vec<(u32, BitmapData)> {
-        let mut bitmap_data = Vec::with_capacity(characters.len());
-        for c in characters {
-            face.ft_face
-                .load_char(*c as usize, ft::face::LoadFlag::RENDER)
-                .unwrap();
-            bitmap_data.push((
-                face.ft_face.get_char_index(*c as usize),
-                BitmapData::from(face.ft_face.glyph()),
-            ));
-        }
-        bitmap_data
+        glyph_map
     }
 
     pub fn size(&self) -> FSize {
