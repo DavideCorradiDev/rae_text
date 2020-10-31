@@ -82,6 +82,19 @@ struct BitmapData {
     rows: i32,
 }
 
+impl From<&ft::GlyphSlot> for BitmapData {
+    fn from(glyph: &ft::GlyphSlot) -> Self {
+        let bitmap = glyph.bitmap();
+        BitmapData {
+            pixels: Vec::from(bitmap.buffer()),
+            left: glyph.bitmap_left(),
+            top: glyph.bitmap_top(),
+            width: bitmap.width(),
+            rows: bitmap.rows(),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct Font {
     size: FSize,
@@ -110,35 +123,11 @@ impl Font {
         hb_font.set_scale(size_ppem as i32, size_ppem as i32);
 
         // Load glyphs.
-        face.ft_face
-            .set_char_size(0, size_i26dot6 as isize, 0, Self::RESOLUTION as u32)
-            .unwrap();
-        let mut glyphs = Vec::with_capacity(characters.len());
-        for c in characters {
-            face.ft_face
-                .load_char(*c as usize, ft::face::LoadFlag::RENDER)
-                .unwrap();
-            let glyph = face.ft_face.glyph();
-            let bitmap = glyph.bitmap();
-            glyphs.push((
-                face.ft_face.get_char_index(*c as usize),
-                BitmapData {
-                    pixels: Vec::from(bitmap.buffer()),
-                    left: glyph.bitmap_left(),
-                    top: glyph.bitmap_top(),
-                    width: bitmap.width(),
-                    rows: bitmap.rows(),
-                },
-            ));
-            // TODO: must make a deep copy of the buffer data before loading the
-            // next char. Best thing to do is not render here, just
-            // make a loop to find max size. Reload the chars
-            // afterwards with bitmap rendereing.
-        }
+        let bitmap_data = Self::load_bitmap_data(face, characters);
 
         // Create the glyph atlas.
-        let glyph_atlas_width = glyphs.iter().map(|x| x.1.width).max().unwrap() as u32;
-        let glyph_atlas_height = glyphs.iter().map(|x| x.1.rows).max().unwrap() as u32;
+        let glyph_atlas_width = bitmap_data.iter().map(|x| x.1.width).max().unwrap() as u32;
+        let glyph_atlas_height = bitmap_data.iter().map(|x| x.1.rows).max().unwrap() as u32;
         let glyph_atlas_depth = characters.len() as u32;
         let glyph_atlas_extent = gfx::Extent3d {
             width: glyph_atlas_width,
@@ -154,7 +143,7 @@ impl Font {
         let mut glyph_atlas_vertices = Vec::with_capacity(characters.len() * 4);
         let mut glyph_atlas_indices = Vec::with_capacity(characters.len() * 6);
         let mut glyph_map = HashMap::new();
-        for (i, (c, g)) in glyphs.into_iter().enumerate() {
+        for (i, (c, g)) in bitmap_data.into_iter().enumerate() {
             let slice_begin = i * glyph_atlas_slice_byte_count;
             for row in 0..g.rows {
                 let image_begin = slice_begin + row as usize * glyph_atlas_row_byte_count;
@@ -238,6 +227,20 @@ impl Font {
             glyph_atlas_mesh,
             glyph_map,
         }
+    }
+
+    fn load_bitmap_data(face: &Face, characters: &[char]) -> Vec<(u32, BitmapData)> {
+        let mut bitmap_data = Vec::with_capacity(characters.len());
+        for c in characters {
+            face.ft_face
+                .load_char(*c as usize, ft::face::LoadFlag::RENDER)
+                .unwrap();
+            bitmap_data.push((
+                face.ft_face.get_char_index(*c as usize),
+                BitmapData::from(face.ft_face.glyph()),
+            ));
+        }
+        bitmap_data
     }
 
     pub fn size(&self) -> FSize {
