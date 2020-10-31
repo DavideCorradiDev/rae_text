@@ -36,6 +36,14 @@ pub fn ppem_to_i26dot6(x: PpemSize, res: FontResolution) -> I26Dot6Size {
 }
 
 // TODO: hide the library?
+// TODO: replace unwrap calls with proper error handling.
+// TODO: add error case tests.
+// TODO: open ticket for better font size typing.
+// TODO: improve the rendering interface.
+// TODO: test different font sizes.
+// TODO: test with non-latin font.
+// TODO: right-left / top-down text.
+// TODO: formatted text rendering.
 
 pub struct FontLibrary {
     ft_lib: ft::Library,
@@ -72,6 +80,17 @@ impl Face {
         let hb_face = hb::Face::from_file(path, face_index).unwrap().to_shared();
         Ok(Self { ft_face, hb_face })
     }
+
+    pub fn load_char(&self, c: char) -> &ft::GlyphSlot {
+        self.ft_face
+            .load_char(c as usize, ft::face::LoadFlag::RENDER)
+            .unwrap();
+        self.ft_face.glyph()
+    }
+
+    pub fn char_index(&self, c: char) -> CharIndex {
+        self.ft_face.get_char_index(c as usize)
+    }
 }
 
 #[derive(Debug)]
@@ -86,12 +105,8 @@ struct Glyph {
 
 impl Glyph {
     fn new(face: &Face, c: char) -> Self {
-        let c = c as usize;
-        face.ft_face
-            .load_char(c, ft::face::LoadFlag::RENDER)
-            .unwrap();
-        let char_index = face.ft_face.get_char_index(c);
-        let glyph = face.ft_face.glyph();
+        let char_index = face.char_index(c);
+        let glyph = face.load_char(c);
         let bitmap = glyph.bitmap();
         Glyph {
             char_index,
@@ -148,7 +163,6 @@ pub struct Font {
 impl Font {
     const RESOLUTION: FontResolution = 300;
 
-    // TODO: replace unwrap calls.
     pub fn new(instance: &gfx::Instance, face: &Face, size: FontSize, characters: &[char]) -> Self {
         assert!(!characters.is_empty());
         assert!(size > 0.);
@@ -283,8 +297,8 @@ impl Font {
         hb::shape(&self.hb_font, buffer, &[])
     }
 
-    pub fn glyph_rendering_info(&self, char_index: &CharIndex) -> &GlyphRenderingInfo {
-        &self.glyph_atlas_map[char_index]
+    pub fn glyph_rendering_info(&self, char_index: CharIndex) -> &GlyphRenderingInfo {
+        &self.glyph_atlas_map[&char_index]
     }
 
     pub fn index_buffer(&self) -> &gfx::Buffer {
@@ -313,6 +327,7 @@ impl CharacterSet {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use galvanic_assert::{matchers::*, *};
 
     const TEST_FONT_PATH: &str = "src/data/Roboto-Regular.ttf";
 
@@ -333,6 +348,73 @@ mod tests {
         let lib = FontLibrary::new().unwrap();
         let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
         let _font = Font::new(&instance, &face, 12., &['a', 'Z', '2', '#']);
+    }
+
+    #[test]
+    fn font_size() {
+        let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
+        let lib = FontLibrary::new().unwrap();
+        let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
+        let font = Font::new(&instance, &face, 12., &['a', 'Z', '2', '#']);
+        expect_that!(&font.size(), eq(12.));
+    }
+
+    #[test]
+    fn font_shape_text() {
+        let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
+        let lib = FontLibrary::new().unwrap();
+        let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
+        let font = Font::new(&instance, &face, 12., &['a', 'Z', '2', '#']);
+        let shaping = font.shape_text("aZzz");
+        let positions = shaping.get_glyph_positions();
+        let infos = shaping.get_glyph_infos();
+
+        let expected_x_advance = [1740, 1915, 1585, 1585];
+        let expected_y_advance = [0, 0, 0, 0];
+        let expected_x_offset = [0, 0, 0, 0];
+        let expected_y_offset = [0, 0, 0, 0];
+        let expected_codepoint = [69, 62, 94, 94];
+
+        for i in 0..positions.len() {
+            expect_that!(&positions[i].x_advance, eq(expected_x_advance[i]));
+            expect_that!(&positions[i].y_advance, eq(expected_y_advance[i]));
+            expect_that!(&positions[i].x_offset, eq(expected_x_offset[i]));
+            expect_that!(&positions[i].y_offset, eq(expected_y_offset[i]));
+            expect_that!(&infos[i].codepoint, eq(expected_codepoint[i]));
+        }
+    }
+
+    #[test]
+    fn font_glyph_rendering_info() {
+        let instance = gfx::Instance::new(&gfx::InstanceDescriptor::default()).unwrap();
+        let lib = FontLibrary::new().unwrap();
+        let face = Face::from_file(&lib, TEST_FONT_PATH, 0).unwrap();
+        let font = Font::new(&instance, &face, 12., &['a', 'Z', '2', 'p']);
+
+        {
+            let gri = font.glyph_rendering_info(face.char_index('a'));
+            expect_that!(&gri.index_range, eq(0..6));
+            expect_that!(&gri.bearing.x, close_to(2., 1e-6));
+            expect_that!(&gri.bearing.y, close_to(-27., 1e-6));
+        }
+        {
+            let gri = font.glyph_rendering_info(face.char_index('Z'));
+            expect_that!(&gri.index_range, eq(6..12));
+            expect_that!(&gri.bearing.x, close_to(2., 1e-6));
+            expect_that!(&gri.bearing.y, close_to(-36., 1e-6));
+        }
+        {
+            let gri = font.glyph_rendering_info(face.char_index('2'));
+            expect_that!(&gri.index_range, eq(12..18));
+            expect_that!(&gri.bearing.x, close_to(2., 1e-6));
+            expect_that!(&gri.bearing.y, close_to(-36., 1e-6));
+        }
+        {
+            let gri = font.glyph_rendering_info(face.char_index('p'));
+            expect_that!(&gri.index_range, eq(18..24));
+            expect_that!(&gri.bearing.x, close_to(3., 1e-6));
+            expect_that!(&gri.bearing.y, close_to(-27., 1e-6));
+        }
     }
 
     #[test]

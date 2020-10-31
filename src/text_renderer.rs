@@ -278,7 +278,7 @@ impl<'a> Renderer<'a> for gfx::RenderPass<'a> {
             let GlyphRenderingInfo {
                 index_range,
                 bearing,
-            } = font.glyph_rendering_info(&info.codepoint).clone();
+            } = font.glyph_rendering_info(info.codepoint).clone();
 
             let mut offset = cursor_pos;
             offset.x = offset.x + bearing.x + i26dot6_to_fsize(position.x_offset);

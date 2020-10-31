@@ -17,6 +17,7 @@ bytemuck = { version = "1.4" }
 
 [dev-dependencies]
 rae_app = { git = "https://github.com/DavideCorradiDev/rae_app.git", tag = "v0.1.0" }
+galvanic-assert = "0.8"
 
 [build-dependencies]
 rae_shader = { git = "https://github.com/DavideCorradiDev/rae_shader.git", tag = "v0.1.2" }
